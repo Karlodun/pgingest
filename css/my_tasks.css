@@ -1,0 +1,59 @@
+#my_tasks>fieldset{
+    width:570px; 
+    background: #b7ca99;
+    float:none;
+}
+
+#my_tasks * {
+    margin:0; padding:0;
+    display:inline-block;
+    float:left;
+}    
+
+#my_tasks .tr {
+    height:26px;
+}
+
+#my_tasks .tr input:checked + label span {
+    color:#040;
+    background:#d3fe9a;
+}
+
+#my_tasks .tr span {
+    height:20px;
+    padding: 2px;
+}
+
+#my_tasks .th span {
+    font-weight:bold;
+    background: #9d5;
+    border-bottom: 2px solid black;
+}
+
+#my_tasks .task_import_name {
+    width: 120px;
+    background: white;
+    border: 1px solid black;
+}
+
+#my_tasks .task_maintainer {
+    width: 150px;
+    background: white;
+    border: 1px solid black;
+}
+
+#my_tasks .task_start_time {
+    width: 120px;
+    background: white;
+    border: 1px solid black;
+}
+#my_tasks .task_status {
+    width: 280px;
+    background: white;
+    border: 1px solid black;
+}
+
+#my_tasks input[type="radio"] {
+    display:none;
+    float:left;
+}

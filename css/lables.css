@@ -1,0 +1,7 @@
+html[lang="en"] #pg_auth label[for="pg_role"] .ml::before {
+    content: "Role"
+}
+
+html[lang="en"] #pg_auth label[for="pg_pwd"] .ml::before {
+    content: "Password"
+}

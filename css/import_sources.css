@@ -1,0 +1,53 @@
+#import_sources>fieldset{
+    width:370px; 
+    background: #b7ca99;
+}
+
+#import_sources * {
+    margin:0; padding:0;
+    display:inline-block;
+    float:left;
+}    
+
+#import_sources .tr {
+    height:26px;
+}
+
+#import_sources .tr input:checked + label span {
+    color:#040;
+    background:#d3fe9a;
+}
+
+#import_sources .tr span {
+    height:20px;
+    padding: 2px;
+}
+
+#import_sources .th span {
+    font-weight:bold;
+    background: #9d5;
+    border-bottom: 2px solid black;
+}
+
+#import_sources .source_import_name {
+    width: 120px;
+    background: white;
+    border: 1px solid black;
+}
+
+#import_sources .source_maintainer {
+    width: 150px;
+    background: white;
+    border: 1px solid black;
+}
+
+#import_sources .source_last_update {
+    width: 80px;
+    background: white;
+    border: 1px solid black;
+}
+
+#import_sources input[type="radio"] {
+    display:none;
+    float:left;
+}
