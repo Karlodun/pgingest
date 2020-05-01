@@ -9,6 +9,8 @@ chmod -R -r+x /srv/pg_ingest/bin
 sudo su pg_ingest
 cd ~
 mkdir logs tmp uploads
+wget "https://vuejs.org/js/vue.min.js" -O "js/vue.js"
+wget "https://github.com/SheetJS/sheetjs/blob/master/xlsx.mini.js" -O "js/xlsx.mini.js"
 # we need to configure apache to run this as v-host!
 # apache2-mpm-itk (http://mpm-itk.sesse.net) can allow us to run this scripts as dedicated user - pg_ingest
 # cp ../bin ~/
