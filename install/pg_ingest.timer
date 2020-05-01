@@ -1,0 +1,14 @@
+[Unit]
+Description=automagic data ingester
+RefuseManualStart=no
+RefuseManualStop=no
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=7200
+Persistent=true
+OnBootSec=15 minutes
+Unit=pg_ingest.service
+
+[Install]
+WantedBy=timers.target

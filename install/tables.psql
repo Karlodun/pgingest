@@ -1,0 +1,90 @@
+-- the scripts are arranged in the way a user should normally fill the tables
+-- with generic tables being last
+
+-- DROP TABLE grimoire.import_source;
+CREATE TABLE grimoire.import_source (
+	import_name varchar PRIMARY KEY,
+	download_link varchar,
+	download_interval interval,
+	last_update date,
+	description_en varchar,
+	description_de varchar,
+	row_length int2, -- chars for ASCII, number of columns for csv
+	autofetch bool NOT NULL DEFAULT false,
+	import_type varchar NOT NULL DEFAULT 'csv'::character varying,
+	target_host varchar NOT NULL DEFAULT,
+	target_database varchar NOT NULL DEFAULT 'cbre_de'::character varying, -- the database MUST exist!!!
+	source_encoding varchar NOT NULL DEFAULT 'UTF8'::character varying,
+	pre_import_steps text, -- reminder: downloaded and import file name is 'raw_import'
+	has_headers bool NOT NULL DEFAULT false,
+	csv_delimiter varchar(3) NOT NULL DEFAULT ','::character varying, -- ignored for fixed lenght file formats!
+	main_maintainer varchar NOT NULL default SESSION_USER, -- maintainers should authenticate using their e-mails!
+	fallback_maintainer_role varchar NOT NULL default CURRENT_ROLE, -- if a source needs multiple maintainers, a dedicated role could be created and should be used by all maintainers
+	licence_link varchar,
+	license text NOT NULL
+);
+-- Column comments
+COMMENT ON COLUMN grimoire.import_source.row_length IS 'chars for ASCII, number of columns for csv';
+COMMENT ON COLUMN grimoire.import_source.target_database IS 'the database MUST exist!!!';
+COMMENT ON COLUMN grimoire.import_source.pre_import_steps IS 'reminder: downloaded and import file name is ''raw_import''';
+COMMENT ON COLUMN grimoire.import_source.license IS 'short licence text if link is available, othervise full';
+COMMENT ON COLUMN grimoire.import_source.licence_link IS 'weblink to the license';
+
+-- we can split imported tables into several with this
+-- DROP TABLE grimoire.table_definitions;
+CREATE TABLE grimoire.table_definitions (
+	import_name varchar NOT NULL REFERENCES grimoire.import_source(import_name),
+	target_table varchar PRIMARY KEY,
+	table_key varchar,
+    -- we need the column name for csv and similar
+	table_key_column varchar,
+    -- or start and end for fixed length files probably we should use different tables?
+	table_key_start int2,
+	table_key_end int2,
+);
+
+-- DROP TABLE grimoire.data_definitions;
+CREATE TABLE grimoire.data_definitions (
+	import_name varchar NOT NULL REFERENCES grimoire.import_source(import_name) ON UPDATE CASCADE,
+	target_table varchar NOT NULL REFERENCES grimoire.table_definitions(target_table) ON UPDATE CASCADE,
+	source_column varchar, -- for csv only
+	split_key_start int2,  -- for fixed length
+	split_key_end int2,    -- for fixed length
+	target_column varchar NOT NULL,
+	target_type varchar NOT NULL DEFAULT 'varchar'::character varying,
+	regexp_check varchar,
+	fk_path varchar,
+	lookup_table varchar,
+	lookup_column varchar,
+	lookup_filter varchar DEFAULT true, -- will be applied as WHERE filter
+	column_order int4 DEFAULT '-1'::integer,
+	CONSTRAINT data_definitions_pkey PRIMARY KEY (target_table, target_column)
+);
+-- Column comments
+COMMENT ON COLUMN grimoire.data_definitions.source_column IS 'for csv only';
+COMMENT ON COLUMN grimoire.data_definitions.lookup_filter IS 'will be applied as WHERE filter';
+
+-- DROP TABLE grimoire.host_pwd;
+CREATE TABLE grimoire.host_pwd (
+	import_name varchar PRIMARY KEY REFERENCES grimoire.import_source(import_name),
+	db_role varchar,
+	db_pwd varchar
+);
+
+-- DROP TABLE grimoire.task_board;
+CREATE TABLE grimoire.task_board (
+	task_id serial PRIMARY KEY,
+	ingest_maintainer varchar NOT NULL DEFAULT CURRENT_ROLE,
+	start_time timestamp NOT NULL DEFAULT now(),
+	import_name varchar REFERENCES grimoire.import_source(import_name),
+	status varchar
+);
+
+-- only as reference, could be made visible in WUI
+-- DROP TABLE grimoire.rgx_choice;
+CREATE TABLE grimoire.rgx_choice (
+	rgx_expr varchar NOT NULL PRIMARY KEY,
+	common_type varchar,
+	description varchar,
+);
+

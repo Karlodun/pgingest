@@ -1,0 +1,9 @@
+[Unit]
+Description=automagic data ingester
+RefuseManualStart=no
+RefuseManualStop=no
+ 
+[Service]
+Type=oneshot
+User=pg_ingest
+ExecStart=/srv/pg_ingest/bin/auto_ingest.sh

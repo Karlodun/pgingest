@@ -1,0 +1,22 @@
+tg_conn:user=msd_master password=3de2w host=de-stats.csg2po3twyai.eu-west-2.rds.amazonaws.com dbname=msd
+pre import steps
+dos2unix: converting file raw_import to Unix format...
+prepare schemas
+NOTICE:  schema "raw_import" already exists, skipping
+NOTICE:  schema "sales" already exists, skipping
+creating headers from csv
+rotate raw tables
+NOTICE:  table "msd_sales_128" does not exist, skipping
+importing raw data
+imptask tables and rgx reports
+NOTICE:  table "historic_128_old" does not exist, skipping
+NOTICE:  relation "historic_128" does not exist, skipping
+NOTICE:  view "historic_128_rgx" does not exist, skipping
+rotate runner table
+NOTICE:  table "msd_sales_runner_128" does not exist, skipping
+runner functions
+NOTICE:  procedure raw_import.run_msd_sales_128(pg_catalog.varchar) does not exist, skipping
+NOTICE:  procedure raw_import.run_msd_sales_128(pg_catalog.varchar,pg_catalog.varchar) does not exist, skipping
+fill runner table
+deleting raw files
+pre import procedures completed
