@@ -4,8 +4,8 @@ useradd -G wwwrun -d /srv/pg_ingest pg_ingest # home directory in srv, should be
 cp .. /srv/pg_ingest
 
 # change file ownership and rights - need more security!
-chmod +r /srv/pg_ingest/*
-chmod -r+x /srv/pg_ingest/bin
+chmod -R +r /srv/pg_ingest/*
+chmod -R -r+x /srv/pg_ingest/bin
 sudo su pg_ingest
 cd ~
 mkdir logs tmp uploads
