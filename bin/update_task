@@ -1,0 +1,6 @@
+#!/bin/bash
+# expects 
+source db_conn.sh
+
+psql "$db_conn" -t -q -c "UPDATE task_board SET status='$2' WHERE task_id='$1';"
+

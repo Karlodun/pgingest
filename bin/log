@@ -1,0 +1,16 @@
+dos2unix: converting file raw_import to Unix format...
+NOTICE:  schema "raw_import" already exists, skipping
+NOTICE:  schema "test" already exists, skipping
+NOTICE:  table "riwis_test_20" does not exist, skipping
+NOTICE:  table "riwis_ma_20_old" does not exist, skipping
+NOTICE:  relation "riwis_ma_20" does not exist, skipping
+NOTICE:  view "riwis_ma_20_rgx" does not exist, skipping
+NOTICE:  table "riwis_mb_20_old" does not exist, skipping
+NOTICE:  relation "riwis_mb_20" does not exist, skipping
+NOTICE:  view "riwis_mb_20_rgx" does not exist, skipping
+NOTICE:  table "riwis_mc_20_old" does not exist, skipping
+NOTICE:  relation "riwis_mc_20" does not exist, skipping
+NOTICE:  view "riwis_mc_20_rgx" does not exist, skipping
+NOTICE:  table "riwis_test_runner_20" does not exist, skipping
+NOTICE:  procedure raw_import.run_riwis_test_20(pg_catalog.varchar) does not exist, skipping
+NOTICE:  procedure raw_import.run_riwis_test_20(pg_catalog.varchar,pg_catalog.varchar) does not exist, skipping
