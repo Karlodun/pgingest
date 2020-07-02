@@ -1,4 +1,23 @@
 # pgingest
+ was developed as a small "ETL" alike tool, for non-technicians to aid in repetitive ingestion of external into a PostgreSQL database.
+# Features
+Data sources and targets
+ Multiple import tasks on same source possible
+ Download data from external sources via CURL
+ Upload data via Web GUI
+ Ingest each source into dedicated host, database and schema
+Easy configuration
+	Configuration via several tables
+Automatic creation of target schemas, tables and backups
+Routing of data
+Can recreate tables or append data
+into different tables based on column values
+	Extracting of substrings, including fixed length sources
+ 	Extracting of data via path, including JSON path and functions
+Error reports based on regular expressions and comparisons with lookup data
+Data type conversions
+
+# Installing pgingest on a server with other DBMS
 Since PG shares roles among DBs in one DBMS, putting pg_ingest among other dbms could ease the management, especially if data maintainers are already members of specific roles in other DBs.
 This will allow to limit access to import sources by role and help the gui to switch between the roles
 
@@ -42,3 +61,7 @@ psql service=pgingest -f install.sql
 
 # Setup a php enabled webserver for GUI (if required)
 TODO
+
+# Usage
+You start your journey with import_source, continue to table_router then column_router and finally define the host_pwd.
+Additionally you can add your entries into rgx_lib
