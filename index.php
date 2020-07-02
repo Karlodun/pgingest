@@ -24,7 +24,7 @@ if (isset($_POST['pg_role'], $_POST['pg_pwd'])) {
 }
 
 if (isset($_SESSION['app_dsn'])) { try{ $app_conn = new PDO($_SESSION['app_dsn']);}catch (PDOException $e){echo $e->getMessage();} }
-if (!isset($app_conn)) {require_once 'bricks/login.php'; exit;}
+if (!isset($app_conn)) {require_once 'bricks/login.html'; exit;}
 require_once 'bricks/maintainer.php';
 ?>
 
