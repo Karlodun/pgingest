@@ -1,16 +1,30 @@
-CREATE OR REPLACE VIEW pgingest.my_roles AS 
-WITH RECURSIVE cte AS (
-    SELECT pg_roles.oid, pg_roles.rolname mr, pg_roles.rolname =current_user cu FROM pg_roles WHERE pg_roles.rolname = SESSION_USER  -- ## case oder filter...
-    UNION
-    SELECT m.roleid, pgr.rolname, pgr.rolname=current_user FROM cte cte_1
-        JOIN pg_auth_members m ON m.member = cte_1.oid
-        JOIN pg_roles pgr ON pgr.oid = m.roleid
-        )
-SELECT array_agg(mr) session_u ,array_agg(mr) filter(WHERE cu) AS current_u
-FROM cte
-
 GRANT USAGE ON SCHEMA pgingest TO public;
-GRANT SELECT ON pgingest.my_roles TO public;
+
+CREATE OR REPLACE VIEW pgingest.session_roles
+AS WITH RECURSIVE cte AS (
+    SELECT pg_roles.oid, pg_roles.rolname AS mr
+    FROM pg_roles
+    WHERE pg_roles.rolname = SESSION_USER
+    UNION
+    SELECT m.roleid,pgr.rolname
+    FROM cte cte_1
+    JOIN pg_auth_members m ON m.member = cte_1.oid
+    JOIN pg_roles pgr ON pgr.oid = m.roleid
+) SELECT array_agg(DISTINCT cte.mr) AS roles FROM cte;
+
+CREATE OR REPLACE VIEW pgingest.current_roles
+AS WITH RECURSIVE cte AS (
+    SELECT pg_roles.oid, pg_roles.rolname AS mr
+    FROM pg_roles
+    WHERE pg_roles.rolname = CURRENT_USER
+    UNION
+    SELECT m.roleid,pgr.rolname
+    FROM cte cte_1
+    JOIN pg_auth_members m ON m.member = cte_1.oid
+    JOIN pg_roles pgr ON pgr.oid = m.roleid
+) SELECT array_agg(DISTINCT cte.mr) AS roles FROM cte;
+
+GRANT SELECT ON pgingest.session_roles, pgingest.current_roles TO public;
 
 CREATE TABLE pgingest.import_source (
     import_name varchar PRIMARY KEY,
@@ -34,7 +48,8 @@ CREATE TABLE pgingest.import_source (
     maintainer_role varchar NOT NULL default CURRENT_ROLE CHECK (trim(maintainer_role) <> '')
 );
 ALTER TABLE pgingest.import_source ENABLE ROW LEVEL SECURITY;
-CREATE POLICY import_source_policy ON pgingest.import_source USING (maintainer_role = ANY (select UNNEST(current_u) FROM pgingest.my_roles));
+--CREATE POLICY import_source_policy ON pgingest.import_source USING (maintainer_role = ANY (select UNNEST(current_u) FROM pgingest.my_roles));
+CREATE POLICY import_source_policy ON pgingest.import_source USING (maintainer_role = ANY ((select roles FROM pgingest.current_roles cr)::varchar[]));
 GRANT ALL ON TABLE pgingest.import_source, pgingest.table_router, pgingest.column_router, pgingest.task_board TO ingest_maintainer;
 GRANT SELECT ON TABLE pgingest.import_source, pgingest.table_router, pgingest.column_router, pgingest.task_board TO ingest_auditor;
 
@@ -47,8 +62,8 @@ CREATE TABLE pgingest.task_board (
     maintainer_role varchar NOT NULL default CURRENT_ROLE CHECK (trim(maintainer_role) <> '')
 );
 ALTER TABLE pgingest.task_board ENABLE ROW LEVEL SECURITY;
-CREATE POLICY task_board_policy ON pgingest.task_board USING (maintainer_role = ANY (select UNNEST(current_u) FROM pgingest.my_roles));
-
+CREATE POLICY task_board_policy ON pgingest.task_board USING (maintainer_role = ANY ((select roles FROM pgingest.current_roles cr)::varchar[]));
+                                                                                     
 CREATE TABLE pgingest.rgx_lib (
     rgx_check_name varchar PRIMARY KEY,
     check_expression varchar,
@@ -66,7 +81,10 @@ CREATE TABLE pgingest.table_router (
     routing_key_length int2 NULL CHECK (routing_key_length > 0)
 );
 ALTER TABLE pgingest.table_router ENABLE ROW LEVEL SECURITY;
-CREATE POLICY table_router_policy ON pgingest.table_router USING ((select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (select UNNEST(current_u) FROM pgingest.my_roles)); 
+CREATE POLICY table_router_policy ON pgingest.table_router USING (
+    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY ((select roles FROM pgingest.current_roles cr)::varchar[])
+); 
+
 
 CREATE TABLE pgingest.column_router (
     import_name varchar NOT NULL REFERENCES pgingest.import_source(import_name) ON UPDATE CASCADE,
@@ -86,7 +104,11 @@ CREATE TABLE pgingest.column_router (
     CONSTRAINT column_router_pkey PRIMARY KEY (target_table, target_column)
 );
 ALTER TABLE pgingest.column_router ENABLE ROW LEVEL SECURITY;
-CREATE POLICY column_router_policy ON pgingest.column_router USING ((select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (select UNNEST(current_u) FROM pgingest.my_roles)); 
+CREATE POLICY column_router_policy ON pgingest.column_router USING (
+    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (
+        (select roles FROM pgingest.current_roles cr)::varchar[])
+); 
+
 
 CREATE TABLE pgingest.host_pwd (
     import_name varchar PRIMARY KEY REFERENCES pgingest.import_source(import_name),
@@ -94,7 +116,9 @@ CREATE TABLE pgingest.host_pwd (
     db_pwd varchar
 );
 ALTER TABLE pgingest.host_pwd ENABLE ROW LEVEL SECURITY;
-CREATE POLICY host_pwd_policy ON pgingest.host_pwd  USING ((select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (select UNNEST(current_u) FROM pgingest.my_roles));
+CREATE POLICY host_pwd_policy ON pgingest.host_pwd  USING ((select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (
+    (select roles FROM pgingest.current_roles cr)::varchar[])
+);
 GRANT SELECT(import_name, db_role), INSERT(import_name,db_role, db_pwd), update(import_name,db_role, db_pwd) ON pgingest.host_pwd TO pgingest_maintainer;
 GRANT SELECT(import_name, db_role) ON pgingest.host_pwd TO pgingest_auditor;
 
@@ -249,3 +273,5 @@ SELECT concat_ws(chr(10)
 )
 FROM pgingest.code_gen WHERE task_id=$1;
 $$ LANGUAGE sql;
+
+GRANT SELECT ON pgingest.session_roles, pgingest.current_roles TO public; -- define proper privs
