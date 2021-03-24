@@ -1,4 +1,9 @@
-GRANT USAGE ON SCHEMA pgingest TO public;
+-- create important roles manually/ via install bash script:
+-- CREATE ROLE pgingest, pgingest_maintainer, pgingest_auditor;
+GRANT pgingest_auditor TO pgingest_maintainer;
+GRANT pgingest_maintainer TO pgingest;
+
+GRANT USAGE ON SCHEMA pgingest TO pgingest_maintainer;
 
 CREATE OR REPLACE VIEW pgingest.session_roles
 AS WITH RECURSIVE cte AS (
@@ -24,7 +29,7 @@ AS WITH RECURSIVE cte AS (
     JOIN pg_roles pgr ON pgr.oid = m.roleid
 ) SELECT array_agg(DISTINCT cte.mr) AS roles FROM cte;
 
-GRANT SELECT ON pgingest.session_roles, pgingest.current_roles TO public;
+GRANT SELECT ON pgingest.session_roles, pgingest.current_roles TO ingest_auditor;
 
 CREATE TABLE pgingest.import_source (
     import_name varchar PRIMARY KEY,
@@ -40,17 +45,19 @@ CREATE TABLE pgingest.import_source (
     source_encoding varchar NOT NULL DEFAULT 'UTF8' CHECK (trim(source_encoding) <> ''),
     pre_import_steps text,
     has_headers bool NOT NULL DEFAULT false,
-    csv_delimiter varchar(3) NOT NULL DEFAULT ','::varchar CHECK (trim(csv_delimiter) <> ''),
+    csv_delimiter varchar(3) NOT NULL DEFAULT chr(7)::varchar CHECK (trim(csv_delimiter) <> ''),
     null_value varchar(4) NOT NULL DEFAULT ''::varchar,
     licence_link varchar,
     license_summary text NOT NULL DEFAULT 'internal' CHECK (trim(license_summary) <> ''),
-    maintainer_user varchar NOT NULL default SESSION_USER CHECK (trim(maintainer_user) <> ''),
-    maintainer_role varchar NOT NULL default CURRENT_ROLE CHECK (trim(maintainer_role) <> '')
+    maintainer_user name NOT NULL default SESSION_USER CHECK (trim(maintainer_user) <> ''),
+    maintainer_role name NOT NULL default CURRENT_ROLE CHECK (trim(maintainer_role) <> '')
 );
 ALTER TABLE pgingest.import_source ENABLE ROW LEVEL SECURITY;
---CREATE POLICY import_source_policy ON pgingest.import_source USING (maintainer_role = ANY (select UNNEST(current_u) FROM pgingest.my_roles));
-CREATE POLICY import_source_policy ON pgingest.import_source USING (maintainer_role = ANY ((select roles FROM pgingest.current_roles cr)::varchar[]));
-GRANT ALL ON TABLE pgingest.import_source, pgingest.table_router, pgingest.column_router, pgingest.task_board TO ingest_maintainer;
+--DROP POLICY import_source_policy ON pgingest.import_source;
+CREATE POLICY import_source_policy ON pgingest.import_source USING (
+    maintainer_role = ANY (select UNNEST(roles) FROM pgingest.current_roles cr)
+);
+GRANT ALL ON TABLE pgingest.import_source, pgingest.table_router, pgingest.column_router, pgingest.task_board TO pgingest_maintainer;
 GRANT SELECT ON TABLE pgingest.import_source, pgingest.table_router, pgingest.column_router, pgingest.task_board TO ingest_auditor;
 
 CREATE TABLE pgingest.task_board (
@@ -62,7 +69,10 @@ CREATE TABLE pgingest.task_board (
     maintainer_role varchar NOT NULL default CURRENT_ROLE CHECK (trim(maintainer_role) <> '')
 );
 ALTER TABLE pgingest.task_board ENABLE ROW LEVEL SECURITY;
-CREATE POLICY task_board_policy ON pgingest.task_board USING (maintainer_role = ANY ((select roles FROM pgingest.current_roles cr)::varchar[]));
+-- DROP POLICY task_board_policy ON pgingest.task_board;
+CREATE POLICY task_board_policy ON pgingest.task_board USING (
+    maintainer_role = ANY (select UNNEST(roles) FROM pgingest.current_roles cr)
+);
                                                                                      
 CREATE TABLE pgingest.rgx_lib (
     rgx_check_name varchar PRIMARY KEY,
@@ -81,8 +91,9 @@ CREATE TABLE pgingest.table_router (
     routing_key_length int2 NULL CHECK (routing_key_length > 0)
 );
 ALTER TABLE pgingest.table_router ENABLE ROW LEVEL SECURITY;
+-- DROP POLICY table_router_policy ON pgingest.table_router;
 CREATE POLICY table_router_policy ON pgingest.table_router USING (
-    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY ((select roles FROM pgingest.current_roles cr)::varchar[])
+    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (select UNNEST(roles) FROM pgingest.current_roles cr)
 ); 
 
 
@@ -104,11 +115,10 @@ CREATE TABLE pgingest.column_router (
     CONSTRAINT column_router_pkey PRIMARY KEY (target_table, target_column)
 );
 ALTER TABLE pgingest.column_router ENABLE ROW LEVEL SECURITY;
+-- DROP POLICY column_router_policy ON pgingest.column_router;
 CREATE POLICY column_router_policy ON pgingest.column_router USING (
-    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (
-        (select roles FROM pgingest.current_roles cr)::varchar[])
+    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (select UNNEST(roles) FROM pgingest.current_roles cr)
 ); 
-
 
 CREATE TABLE pgingest.host_pwd (
     import_name varchar PRIMARY KEY REFERENCES pgingest.import_source(import_name),
@@ -116,77 +126,84 @@ CREATE TABLE pgingest.host_pwd (
     db_pwd varchar
 );
 ALTER TABLE pgingest.host_pwd ENABLE ROW LEVEL SECURITY;
-CREATE POLICY host_pwd_policy ON pgingest.host_pwd  USING ((select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (
-    (select roles FROM pgingest.current_roles cr)::varchar[])
+-- DROP POLICY host_pwd_policy ON pgingest.host_pwd;
+CREATE POLICY host_pwd_policy ON pgingest.host_pwd  USING (
+    (select maintainer_role from pgingest.import_source ims where ims.import_name=import_name) = ANY (select UNNEST(roles) FROM pgingest.current_roles cr)
 );
-GRANT SELECT(import_name, db_role), INSERT(import_name,db_role, db_pwd), update(import_name,db_role, db_pwd) ON pgingest.host_pwd TO pgingest_maintainer;
+GRANT INSERT(import_name,db_role, db_pwd), UPDATE(import_name,db_role, db_pwd) ON pgingest.host_pwd TO pgingest_maintainer;
 GRANT SELECT(import_name, db_role) ON pgingest.host_pwd TO pgingest_auditor;
 
-CREATE TABLE pgingest.target_code (
+CREATE TABLE pgingest.prepare_target (
     priority int PRIMARY KEY,
     description varchar,
     code varchar
 );
 
-INSERT INTO pgingest.target_code (priority, description, code) VALUES
-(2,'sql code per step and task', 'CREATE TABLE IF NOT EXISTS pgingest.task(task_id int, import_name varchar, step varchar, target varchar, code varchar, completed boolean default false);'),
-(3, 'list of error_report MVs', 'CREATE TABLE IF NOT EXISTS pgingest.error_reports(task_id int, import_name varchar, target varchar, report_path varchar);'),
-(4, 'list of intermediate tables','CREATE TABLE IF NOT EXISTS pgingest.task_tables(task_id int, import_name varchar, target varchar, table_path varchar);'),
-(5, 'procedure to execute task steps', 'CREATE OR REPLACE PROCEDURE pgingest.runner(task_id int, step varchar, target varchar default ''%'')
-LANGUAGE plpgsql
-as $$ BEGIN
-EXECUTE (SELECT string_agg(runner_code, chr(10)) from pgingest.task 
-where not completed and task.task_id=runner.task_id and task.step=runner.step and task.target like runner.target);
-UPDATE pgingest.task SET completed=TRUE 
-WHERE not completed and task.task_id=runner.task_id and task.step=runner.step and task.target like runner.target;
-END $$;'),
-(6,'overloaded report refresher for task or import_name', 'CREATE OR REPLACE PROCEDURE pgingest.rr(task_id int, target varchar default ''%'')
-LANGUAGE plpgsql
-as $$ BEGIN
-EXECUTE (SELECT string_agg(''REFRESH MATERIALIZED VIEW ''||report_path, chr(10)) from pgingest.error_reports WHERE task.task_id=rr.task_id and task.target like rr.target);
-END $$;
-CREATE OR REPLACE PROCEDURE pgingest.rr(import_name varchar, target varchar default ''%'')
-LANGUAGE plpgsql
-as $$ BEGIN
-EXECUTE (SELECT string_agg(''REFRESH MATERIALIZED VIEW ''||report_path, chr(10)) from pgingest.error_reports WHERE task.import_name=rr.import_name and task.target like rr.target);
-END $$;'),
-(7, 'overloaded task cleansing', 'CREATE OR REPLACE PROCEDURE pgingest.cleanup(task_id int, target varchar default ''%'')
-LANGUAGE plpgsql
-as $$ BEGIN
-EXECUTE (SELECT ''DROP TABLE ''||string_agg(table_path, chr(10))||'' cascade;'' from pgingest.task_tables 
-where task.task_id=runner.task_id and task.target like runner.target);
-END $$;
-CREATE OR REPLACE PROCEDURE pgingest.cleanup(task_id int)
-LANGUAGE plpgsql
-as $$ BEGIN
-EXECUTE (SELECT ''DROP TABLE ''||string_agg(table_path, chr(10))||'' cascade;'' from pgingest.task_tables where task.task_id=cleanup.task_id);
-END $$;
-CREATE OR REPLACE PROCEDURE pgingest.cleanup(import_name varchar)
-LANGUAGE plpgsql
-as $$ BEGIN
-EXECUTE (SELECT ''DROP TABLE ''||string_agg(table_path, chr(10))||'' cascade;'' from pgingest.task_tables where task.import_name=cleanup.import_name);
-END $$;')
+INSERT INTO pgingest.prepare_target (priority, description, code) VALUES
+(20,'sql code per step and task', 'CREATE TABLE IF NOT EXISTS pgingest_tmp.task(task_id int, import_name varchar, step varchar, target varchar, code varchar, completed boolean default false);'),
+(30, 'list of error_report MVs', 'CREATE TABLE IF NOT EXISTS pgingest_tmp.error_reports(task_id int, import_name varchar, target varchar, report_path varchar);'),
+(40, 'list of intermediate tables','CREATE TABLE IF NOT EXISTS pgingest_tmp.task_tables(task_id int, import_name varchar, target varchar, table_path varchar);'),
+(50, 'procedure to execute task steps', '
+CREATE OR REPLACE PROCEDURE pgingest_tmp.runner(task_id int, step varchar, target varchar default ''%'')
+    LANGUAGE plpgsql
+    as $$ BEGIN
+    EXECUTE (SELECT string_agg(runner_code, chr(10)) from pgingest_tmp.task 
+    where not completed and task.task_id=runner.task_id and task.step=runner.step and task.target like runner.target);
+    UPDATE pgingest_tmp.task SET completed=TRUE 
+    WHERE not completed and task.task_id=runner.task_id and task.step=runner.step and task.target like runner.target;
+    END $$;
+    '),
+(60,'overloaded report refresher for task or import_name', '
+CREATE OR REPLACE PROCEDURE pgingest_tmp.rr(task_id int, target varchar default ''%'')
+    LANGUAGE plpgsql
+    as $$ BEGIN
+    EXECUTE (SELECT string_agg(''REFRESH MATERIALIZED VIEW ''||report_path, chr(10)) from pgingest_tmp.error_reports WHERE task.task_id=rr.task_id and task.target like rr.target);
+    END $$;
+CREATE OR REPLACE PROCEDURE pgingest_tmp.rr(import_name varchar, target varchar default ''%'')
+    LANGUAGE plpgsql
+    as $$ BEGIN
+    EXECUTE (SELECT string_agg(''REFRESH MATERIALIZED VIEW ''||report_path, chr(10)) from pgingest_tmp.error_reports WHERE task.import_name=rr.import_name and task.target like rr.target);
+    END $$;
+    '),
+(70, 'overloaded task cleansing', '
+CREATE OR REPLACE PROCEDURE pgingest_tmp.cleanup(task_id int, target varchar default ''%'')
+    LANGUAGE plpgsql
+    as $$ BEGIN
+    EXECUTE (SELECT ''DROP TABLE ''||string_agg(table_path, chr(10))||'' cascade;'' from pgingest_tmp.task_tables 
+    where task.task_id=runner.task_id and task.target like runner.target);
+    END $$;
+CREATE OR REPLACE PROCEDURE pgingest_tmp.cleanup(task_id int)
+    LANGUAGE plpgsql
+    as $$ BEGIN
+    EXECUTE (SELECT ''DROP TABLE ''||string_agg(table_path, chr(10))||'' cascade;'' from pgingest_tmp.task_tables where task.task_id=cleanup.task_id);
+    END $$;
+CREATE OR REPLACE PROCEDURE pgingest_tmp.cleanup(import_name varchar)
+    LANGUAGE plpgsql
+    as $$ BEGIN
+    EXECUTE (SELECT ''DROP TABLE ''||string_agg(table_path, chr(10))||'' cascade;'' from pgingest_tmp.task_tables where task.import_name=cleanup.import_name);
+    END $$;
+    ')
 
 CREATE OR REPLACE VIEW pgingest.code_gen AS
 SELECT td.import_name, tb.task_id
 , NOT (tb.status::text = 'completed'::text OR tb.status::text ~~ 'error%'::text) OR tb.status IS NULL active_task
 --, ''
-,'CREATE TABLE '||td.target_table||'_'||tb.task_id||' AS 
+, 'CREATE TABLE '||td.target_table||'_'||tb.task_id||' AS 
 SELECT '|| string_agg(
 'nullif(trim(substring('||value_path||','|| value_from||coalesce(', '||value_length,'')||')),'''
 ||COALESCE(dd.null_value, imps.null_value) ||''')::varchar '|| target_column, '
   ,' ORDER BY dd.column_order, dd.target_column)||'
-FROM pgingest.'||td.import_name||'_'||tb.task_id || COALESCE('
+FROM pgingest_tmp.'||td.import_name||'_'||tb.task_id || COALESCE('
 WHERE trim(substring('||routing_key_path||','||routing_key_from||coalesce(', '||routing_key_length,'')||')) ='''||routing_key|| '''','')||';
 ' AS imptask_table
-,'INSERT INTO pgingest.error_reports VALUES ('||tb.task_id||','''||tb.import_name||''','''||td.target_table||''','''|| td.target_table|| '_'|| tb.task_id|| '_rgx'');
+,'INSERT INTO pgingest_tmp.error_reports VALUES ('||tb.task_id||','''||tb.import_name||''','''||td.target_table||''','''|| td.target_table|| '_'|| tb.task_id|| '_rgx'');
 CREATE MATERIALIZED VIEW '||td.target_table||'_'||tb.task_id||'_rgx AS 
 SELECT '||
 string_agg('array_agg( distinct case when ('|| dd.target_column||' !~ '''||rgx.rgx_expression||''') THEN '||dd.target_column||' END) '||dd.target_column, '
 , ' ORDER BY dd.column_order, dd.target_column)|| '
 FROM '|| td.target_table|| '_'|| tb.task_id|| ';
 'AS rgx_reports
-,'INSERT INTO pgingest.error_reports VALUES ('||tb.task_id||','''||tb.import_name||''','''||td.target_table||''','''|| td.target_table|| '_'|| tb.task_id|| '_fk'');
+,'INSERT INTO pgingest_tmp.error_reports VALUES ('||tb.task_id||','''||tb.import_name||''','''||td.target_table||''','''|| td.target_table|| '_'|| tb.task_id|| '_fk'');
 CREATE MATERIALIZED VIEW '||td.target_table||'_fk AS 
 SELECT '|| string_agg(
     'array_agg(distinct case when '|| dd.target_column||'::varchar NOT in (select '||dd.lookup_column||'::varchar FROM '||dd.lookup_table||'_'||tb.task_id
@@ -194,7 +211,7 @@ SELECT '|| string_agg(
 , ') || '
 FROM '||td.target_table||'_'||tb.task_id||';
 ' AS fk_reports
-, 'INSERT INTO pgingest.task(task_id int, import_name varchar, step varchar, target varchar, code)
+, 'INSERT INTO pgingest_tmp.task(task_id int, import_name varchar, step varchar, target varchar, code)
 VALUES ('||tb.task_id||','''||td.import_name||''', ''recreate_table'', '''|| td.target_table|| ''', 
 ''DROP TABLE IF EXISTS '||td.target_table||'_old cascade;
 ALTER TABLE IF EXISTS '||td.target_table||' RENAME TO '||split_part(td.target_table, '.', 2)||'_old;
@@ -203,24 +220,24 @@ select '|| string_agg(dd.target_column||'::'||dd.target_type, '
 ,' ORDER BY dd.column_order, dd.target_column)||'
 FROM '||td.target_table||'_'||tb.task_id||';'');
 ' AS table_recreator
-, 'INSERT INTO pgingest.task(task_id int, import_name varchar, step varchar, target varchar, code)
+, 'INSERT INTO pgingest_tmp.task(task_id int, import_name varchar, step varchar, target varchar, code)
 VALUES ('||tb.task_id||','''||td.import_name||''',''fill_table'', '''||td.target_table||''',
  ''INSERT INTO '||td.target_table||'('||string_agg(dd.target_column, ',' ORDER BY dd.column_order, dd.target_column)||') 
 select '||string_agg(concat(dd.target_column, '::', dd.target_type), '
   ,' ORDER BY dd.column_order, dd.target_column)||'
 FROM '||td.target_table||'_'||tb.task_id||';'');
 ' AS table_filler
-, 'INSERT INTO pgingest.task(task_id int, import_name varchar, step varchar, target varchar, code)
+, 'INSERT INTO pgingest_tmp.task(task_id int, import_name varchar, step varchar, target varchar, code)
 VALUES ('||tb.task_id||','''||td.import_name||''',''set_fk'', '''||td.target_table||''',
 '''||string_agg('ALTER TABLE '||td.target_table||' ADD CONSTRAINT '||td.target_table||'_'||dd.lookup_table||'_'||dd.lookup_column||'_fk
     FOREIGN KEY ('||dd.target_column||') REFERENCES '||dd.lookup_table||'('||dd.lookup_column||')', ';')
 || ';'');
 ' AS fk_setter
-   FROM  pgingest.pgingest.column_router dd
-     JOIN pgingest.pgingest.table_router td USING (import_name, target_table)
-     JOIN pgingest.pgingest.task_board tb USING (import_name)
-     JOIN pgingest.pgingest.import_source imps USING (import_name)
-     JOIN pgingest.pgingest.rgx_lib rgx using(rgx_check_name)
+   FROM  pgingest.column_router dd
+     JOIN pgingest.table_router td USING (import_name, target_table)
+     JOIN pgingest.task_board tb USING (import_name)
+     JOIN pgingest.import_source imps USING (import_name)
+     JOIN pgingest.rgx_lib rgx using(rgx_check_name)
   GROUP BY td.import_name, td.target_table, td.routing_key_from, td.routing_key_length, td.routing_key_path, td.routing_key, tb.task_id;
 
 CREATE OR REPLACE FUNCTION pgingest.task_vars(import_name varchar, OUT varchar)
@@ -236,20 +253,20 @@ SELECT concat_ws(';'||chr(10)||chr(10)
 dos2unix raw_import
 "'
 )
-FROM pgingest.pgingest.import_source imps
-LEFT JOIN pgingest.pgingest.host_pwd USING (import_name)
+FROM pgingest.import_source imps
+LEFT JOIN pgingest.host_pwd USING (import_name)
 where imps.import_name=$1;
 $$ LANGUAGE sql;
-SELECT pgingest.task_vars('gv100');
 
 DROP FUNCTION pgingest.prep_code;
 CREATE OR REPLACE FUNCTION pgingest.prep_code(import_name varchar) RETURNS TABLE(code varchar)
 AS $$
-SELECT 'CREATE SCHEMA IF NOT EXISTS '|| unnest(array_agg(DISTINCT split_part(target_table, '.', 1)::varchar)||'pgingest'::varchar)|| ';'
+SELECT 'CREATE SCHEMA IF NOT EXISTS '
+    || unnest(array_agg(DISTINCT split_part(target_table, '.', 1)::varchar) || 'pgingest_tmp'::varchar)
+    || ';'
 FROM pgingest.table_router  WHERE target_table::text ~ '.' AND prep_code.import_name=table_router.import_name
-UNION ALL (SELECT code FROM pgingest.target_code ORDER BY priority)
+UNION ALL (SELECT code FROM pgingest.prepare_target ORDER BY priority)
 $$ LANGUAGE sql;
-SELECT pgingest.prep_code('gv100');
 
 CREATE OR REPLACE FUNCTION pgingest.new_task(import_name varchar, OUT int)
 AS $$
@@ -273,5 +290,3 @@ SELECT concat_ws(chr(10)
 )
 FROM pgingest.code_gen WHERE task_id=$1;
 $$ LANGUAGE sql;
-
-GRANT SELECT ON pgingest.session_roles, pgingest.current_roles TO public; -- define proper privs
